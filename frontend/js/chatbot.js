@@ -156,7 +156,10 @@ class ChatbotManager {
             // Use production API URL for Vercel deployment
             const apiUrl = window.location.hostname === 'localhost' 
                 ? 'http://localhost:3001/api/ai/chatbot'
-                : '/api/ai/chatbot';
+                : '/api/chatbot';
+            
+            console.log('🌐 Sending to API:', apiUrl);
+            console.log('📝 Message:', message);
             
             const response = await fetch(apiUrl, {
                 method: 'POST',
@@ -166,8 +169,14 @@ class ChatbotManager {
                 body: JSON.stringify({ message })
             });
             
+            console.log('📡 Response status:', response.status);
+            
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+            
             const result = await response.json();
-            console.log('Chatbot response:', result);
+            console.log('✅ Chatbot response:', result);
             
             // Hide typing indicator
             this.hideTypingIndicator();
@@ -205,9 +214,23 @@ class ChatbotManager {
             }
             
         } catch (error) {
-            console.error('Chatbot error:', error);
+            console.error('❌ Chatbot error:', error);
             this.hideTypingIndicator();
-            this.addBotMessage('❌ AI Server is not responding. Please make sure the backend server (ai-server.js) is running on port 3001.', 'error');
+            
+            // Better error messages
+            let errorMessage = 'An error occurred while processing your message.';
+            
+            if (error.message.includes('Failed to fetch') || error.message.includes('NetworkError')) {
+                errorMessage = '🔌 Cannot connect to AI server. Please check:\n1. Is the backend server running?\n2. Check your internet connection\n3. Verify API configuration';
+            } else if (error.message.includes('429')) {
+                errorMessage = '⏳ Too many requests. Please wait a moment and try again.';
+            } else if (error.message.includes('401')) {
+                errorMessage = '🔑 API authentication failed. Please check your API key configuration.';
+            } else if (error.message.includes('500')) {
+                errorMessage = '⚠️ Server error. The AI service is temporarily unavailable.';
+            }
+            
+            this.addBotMessage(errorMessage, 'error');
         }
         
         // Save chat history
