@@ -9,6 +9,9 @@ const openai = new OpenAI({
     apiKey: process.env.OPENAI_API_KEY
 });
 
+// Resolve model from environment with safe default
+const CHAT_MODEL = process.env.OPENAI_MODEL || 'gpt-4o-mini';
+
 module.exports = async (req, res) => {
     // Set CORS headers
     res.setHeader('Access-Control-Allow-Credentials', true);
@@ -20,6 +23,17 @@ module.exports = async (req, res) => {
     if (req.method === 'OPTIONS') {
         res.status(200).end();
         return;
+    }
+
+    // Lightweight health check to help diagnose production issues
+    if (req.method === 'GET') {
+        return res.status(200).json({
+            ok: true,
+            service: 'wealthease-chatbot',
+            timestamp: new Date().toISOString(),
+            openaiConfigured: !!process.env.OPENAI_API_KEY,
+            model: CHAT_MODEL
+        });
     }
 
     // Only allow POST
@@ -50,7 +64,7 @@ module.exports = async (req, res) => {
         
         // Call OpenAI API
         const completion = await openai.chat.completions.create({
-            model: 'gpt-3.5-turbo',
+            model: CHAT_MODEL,
             messages: [
                 {
                     role: 'system',
@@ -215,8 +229,11 @@ module.exports = async (req, res) => {
     } catch (error) {
         console.error('Chatbot error:', error);
         
-        if (error.response) {
-            const status = error.response.status;
+        // OpenAI SDK v4 often exposes status and message directly on the error
+        const status = error?.status || error?.response?.status;
+        const message = error?.message || error?.response?.data?.error?.message;
+        
+        if (status) {
             
             if (status === 429) {
                 return res.status(429).json({
@@ -228,12 +245,17 @@ module.exports = async (req, res) => {
                     success: false,
                     error: 'Invalid OpenAI API key.'
                 });
+            } else if (status === 404) {
+                return res.status(400).json({
+                    success: false,
+                    error: `Requested model "${CHAT_MODEL}" is not available. Set OPENAI_MODEL to a model your account can access (e.g., gpt-4o-mini) and redeploy.`
+                });
             }
         }
         
         return res.status(500).json({
             success: false,
-            error: 'An error occurred while processing your message. Please try again.'
+            error: message || 'An error occurred while processing your message. Please try again.'
         });
     }
 };
